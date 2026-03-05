@@ -128,6 +128,7 @@ def transfer_zone(dns_server: str, domain: str) -> list:
                 hostname = match.group(1).rstrip('.')
                 ip = match.group(2)
                 records.append([ip, hostname])
+                GLOBAL_HOSTS[hostname] = [ip]
 
         print_message(f"Перенос зоны для {domain} сработал, держи hosts:", "success")
         print_message("\n".join(f"{record[0]} {record[1]}" for record in records), "text")
@@ -238,17 +239,18 @@ def run_recon(target: str, domains: str = None):
     dns_servers = find_dns_servers(iplist)
     interrogation_dns_servers(target, dns_servers, domains)
 
-    print_message(f"Финализированный результат для hosts:", "success")
-    buffer = {}
-    for hostname in GLOBAL_HOSTS.keys():
-        if len(GLOBAL_HOSTS[hostname]) == 1:
-            print_message(f"{GLOBAL_HOSTS[hostname][0]}    {hostname}")
-        else:
-            buffer[hostname] = GLOBAL_HOSTS[hostname]
-
-    print_message("Оставшиеся не распределенные хосты:", "alert")
-    for hostname in buffer.keys():
-        print_message(f"{hostname} {" ".join(buffer[hostname])}", "text")
+    if GLOBAL_HOSTS:
+        print_message(f"Финализированный результат для hosts:", "success")
+        buffer = {}
+        for hostname in GLOBAL_HOSTS.keys():
+            if len(GLOBAL_HOSTS[hostname]) == 1:
+                print_message(f"{GLOBAL_HOSTS[hostname][0]}    {hostname}", "text")
+            else:
+                buffer[hostname] = GLOBAL_HOSTS[hostname]
+        if buffer:
+            print_message("Оставшиеся не распределенные хосты:", "alert")
+            for hostname in buffer.keys():
+                print_message(f"{hostname} {" ".join(buffer[hostname])}", "text")
 
 
 if __name__ == "__main__":
