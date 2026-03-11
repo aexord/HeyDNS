@@ -7,6 +7,7 @@ import re
 
 GLOBAL_HOSTS = {}
 
+
 class Colors:
     RED = '\033[91m'
     GREEN = '\033[92m'
@@ -15,19 +16,24 @@ class Colors:
     RESET = '\033[00m'
 
 
-def banner():
-    banner = f"""
+def banner(only_brute: bool = False):
+    banner_info = f"""
     {Colors.YELLOW}╔═══════════════════════════════════════╗
     {Colors.YELLOW}║                                       ║
     {Colors.YELLOW}║{Colors.BLUE}  HeyDNS by @Aexord, @Machine_Prophet  {Colors.YELLOW}║
-    {Colors.YELLOW}║                             ver. 1.0  ║
+    {Colors.YELLOW}║                             ver. 1.1  ║
     {Colors.YELLOW}╚═══════════════════════════════════════╝{Colors.RESET}
+    {Colors.YELLOW} Режим работы: {Colors.RESET}
+    {Colors.YELLOW} DNS-сервер - {Colors.BLUE} {"Перенос зоны + брут по подсети" if not only_brute else "Только брут по подсети"} {Colors.RESET}
+    {Colors.YELLOW} DC DNS-сервер - {Colors.BLUE} Только брут по подсети {Colors.RESET}
     """
-    print(banner)
+    print(banner_info)
 
 
 def print_message(text: str, level: str, ender: str = "\n", flusher: bool = False):
-    """Вывод красочных сообщений"""
+    """
+    Вывод красочных сообщений
+    """
 
     match level:
         case "text":
@@ -41,14 +47,18 @@ def print_message(text: str, level: str, ender: str = "\n", flusher: bool = Fals
 
 
 def nmap_parse(nmap_output: str) -> list:
-    """Парсинг вывода nmap"""
+    """
+    Парсинг вывода nmap
+    """
     ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
     ips = re.findall(ip_pattern, nmap_output)
     return ips
 
 
 def check_alive_hosts(subnet: str) -> list:
-    """Быстрая проверка живых хостов по подсети"""
+    """
+    Быстрая проверка живых хостов по подсети
+    """
     if not bool(re.fullmatch(r'[0-9./]*', subnet)):
         print_message("Некорректный формат целей для nmap!", "fail")
         exit(1)
@@ -57,7 +67,7 @@ def check_alive_hosts(subnet: str) -> list:
                                  shell=True, capture_output=True, text=True, check=True)
         print_message("Залутали список живых хостов:", "success")
         iplist = nmap_parse(checker.stdout)
-        print_message(", ".join(iplist), "text", ender="\n\n")
+        print_message(", ".join(iplist), "text")
         # print_message(checker.stderr, "fail") # debug fail
         return iplist
     except subprocess.CalledProcessError as e:
@@ -66,7 +76,9 @@ def check_alive_hosts(subnet: str) -> list:
 
 
 def check_port(ip: str, port: int = 53):
-    """Проверка порта на хосте, по умолчанию, проверяем DNS"""
+    """
+    Проверка порта на хосте, по умолчанию, проверяем DNS
+    """
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1)
@@ -78,9 +90,10 @@ def check_port(ip: str, port: int = 53):
 
 
 def find_dns_servers(ips: list) -> list:
-
+    """
+    Функция определения DNS-серверов
+    """
     dns_servers = []
-    print_message("Хосты с 53 портом:", "alert", ender="\n\n")
     for ip in ips:
         if check_port(ip):
             dns_servers.append(ip)
@@ -94,8 +107,9 @@ def find_dns_servers(ips: list) -> list:
 
 
 def check_dc_dns_server(ip: str) -> bool:
-
-    print_message(" ", "text")
+    """
+    Функция определения DC DNS-серверов
+    """
 
     try:
         if check_port(ip, 88):
@@ -111,6 +125,15 @@ def check_dc_dns_server(ip: str) -> bool:
 
 
 def transfer_zone(dns_server: str, domain: str) -> list:
+    """
+    Функция переноса зоны для DNS-серверов
+    """
+
+    def find_ip_for_hostname(hname, list_records):
+        for address, hostnames in list_records.items():
+            if hname in hostnames:
+                return address
+        return None
 
     try:
         checker = subprocess.run("dig axfr {domain} @{dns}".format(domain=domain, dns=dns_server),
@@ -119,27 +142,43 @@ def transfer_zone(dns_server: str, domain: str) -> list:
             print_message(f"Перенос зоны для {domain} на {dns_server} не сработал :(", "alert")
             return []
 
-        pattern = r'^(\S+)\s+\d+\s+IN\s+A\s+(\d+\.\d+\.\d+\.\d+)$'
-        records = []
+        pattern_A_record = r'^(\S+)\s+\d+\s+IN\s+A\s+(\d+\.\d+\.\d+\.\d+)$'
+        pattern_CNAME_record = r'^(\S+)\s+\d+\s+IN\s+CNAME\s+(\S+)$'
+        records = {}
 
         for line in checker.stdout.split('\n'):
-            match = re.match(pattern, line.strip())
+            match = re.match(pattern_A_record, line.strip())
             if match:
                 hostname = match.group(1).rstrip('.')
+                if "*" in hostname:
+                    continue
                 ip = match.group(2)
-                records.append([ip, hostname])
-                GLOBAL_HOSTS[hostname] = [ip]
+                if ip in records:
+                    records[ip].append(hostname)
+                else:
+                    records[ip] = [hostname]
+            else:
+                match = re.match(pattern_CNAME_record, line.strip())
+                if match:
+                    first_hostname = match.group(1).rstrip('.')
+                    if "*" in first_hostname:
+                        continue
+                    second_hostname = match.group(2).rstrip('.')
+                    if ip := find_ip_for_hostname(second_hostname, records):
+                        records[ip].append(first_hostname)
 
         print_message(f"Перенос зоны для {domain} сработал, держи hosts:", "success")
-        print_message("\n".join(f"{record[0]} {record[1]}" for record in records), "text")
+        print_message("\n".join(f"{ip} {" ".join(records[ip])}" for ip in records.keys()), "text", ender="\n\n")
         # print_message(checker.stderr, "fail") # debug fail
-        return records
     except subprocess.CalledProcessError as e:
-        print_message(f"Что-то пошло не так: {e.stderr}", "fail")
+        print_message(f"Что-то пошло не так: {e.stderr}", "fail", ender="\n\n")
         exit(1)
 
 
 def req_dc_dns_server(dns_server: str, subnet: str) -> (dict, list):
+    """
+    Функция опроса DNS-серверов по подсети
+    """
 
     hosts = {}
 
@@ -153,7 +192,7 @@ def req_dc_dns_server(dns_server: str, subnet: str) -> (dict, list):
             return {}
 
         if "server can't find" in checker.stdout:
-            print_message(f"Так, мне этот DNS {dns_server} не нравится", "fail")
+            print_message(f"Так, этот {dns_server} сервер даже себя опознать не может, пропустим его", "fail")
             return {}
 
         pattern = r'(\d+)\.(\d+)\.(\d+)\.(\d+)\.in-addr\.arpa\s+name\s+=\s+([^\s]+)\.?$'
@@ -196,33 +235,79 @@ def req_dc_dns_server(dns_server: str, subnet: str) -> (dict, list):
         exit(1)
 
 
-def interrogation_dns_servers(subnet: str, dns_servers: list, domains: str = None):
+def interrogation_dns_servers(subnet: str, dns_servers: list, domains: str = None, only_brute: bool = False):
+    """
+    Массивная функция работы с DNS-серверами (перенос зоны + опрос)
+    """
     if domains is None or domains == "":
         list_domains = []
     else:
         list_domains = domains.split(',')
 
     for dns_server in dns_servers:
+        print_message(f" ", "text")
+        # Для не-DC DNS-серверов пытаемся и перенос зоны сделать, и опросить их по всей подсети
         if not check_dc_dns_server(dns_server):
-            if not list_domains:
-                print_message('Нет домена - нет возможного переноса зоны ._.', 'fail')
-                continue
-            for domain in list_domains:
-                transfer_zone(dns_server, domain)
-        else:
+
+            if not only_brute:
+                if not list_domains:
+                    print_message('Нет домена - нет возможного переноса зоны ._.', 'fail')
+                else:
+                    for domain in list_domains:
+                        transfer_zone(dns_server, domain)
+
+            print_message(f"Начинаем злостный опрос {dns_server} v_v", "alert", ender="\n\n")
+
+            # Все хосты, для которых определили имя
             hosts = req_dc_dns_server(dns_server, subnet)
+
+            # Массив для хостов, у которых есть пересечение по ip/имя
             buffer = {}
+
+            # Если нашли хосты
             if hosts:
-                print_message("Залутали хостов для hosts:", "success")
+                print_message(f"Залутали хостов для hosts с {dns_server}:", "success")
             else:
                 continue
-            for hostname in hosts.keys():
 
+            for hostname in hosts.keys():
                 if hostname not in GLOBAL_HOSTS:
                     GLOBAL_HOSTS[hostname] = hosts[hostname]
                 else:
                     GLOBAL_HOSTS[hostname] = list(set(GLOBAL_HOSTS[hostname] + hosts[hostname]))
 
+                # Определяем проблемные хосты
+                if len(hosts[hostname]) == 1:
+                    print_message(f"{hosts[hostname][0]} {hostname}", 'text')
+                else:
+                    buffer[hostname] = hosts[hostname]
+            if buffer:
+                print_message("Также есть пересечение по именами и ip:", "alert")
+                for hostname in buffer.keys():
+                    print_message(f"{hostname} {" ".join(buffer[hostname])}", "text")
+        # Для DC-DNS серверов как правило перенос зоны не работает, поэтому просто начнём их злостно опрашивать
+        else:
+            print_message(f"Начинаем злостный опрос {dns_server} v_v", "alert")
+
+            # Все хосты, для которых определили имя
+            hosts = req_dc_dns_server(dns_server, subnet)
+
+            # Массив для хостов, у которых есть пересечение по ip/имя
+            buffer = {}
+
+            if hosts:
+                print_message(f"Залутали хостов для hosts с {dns_server}:", "success")
+            else:
+                continue
+
+            # Если нашли хосты
+            for hostname in hosts.keys():
+                if hostname not in GLOBAL_HOSTS:
+                    GLOBAL_HOSTS[hostname] = hosts[hostname]
+                else:
+                    GLOBAL_HOSTS[hostname] = list(set(GLOBAL_HOSTS[hostname] + hosts[hostname]))
+
+                # Определяем проблемные хосты
                 if len(hosts[hostname]) == 1:
                     print_message(f"{hosts[hostname][0]} {hostname}", 'text')
                 else:
@@ -233,13 +318,22 @@ def interrogation_dns_servers(subnet: str, dns_servers: list, domains: str = Non
                     print_message(f"{hostname} {" ".join(buffer[hostname])}", "text")
 
 
-def run_recon(target: str, domains: str = None):
-    banner()
+def run_recon(target: str, domains: str = None, only_brute: bool = False):
+    """
+    Основная функция запуска разведки и финального вывода по её результатам
+    """
+    banner(only_brute)
+    print_message("Ищем живые хосты", "alert", ender="\n\n")
     iplist = check_alive_hosts(target)
+    print_message(f" ", "text")
+    print_message("Ищем DNS-сервера", "alert", ender="\n\n")
     dns_servers = find_dns_servers(iplist)
-    interrogation_dns_servers(target, dns_servers, domains)
+    print_message(f" ", "text")
+    print_message("Начинаем работать с каждым сервером", "alert")
+    interrogation_dns_servers(target, dns_servers, domains, only_brute)
 
     if GLOBAL_HOSTS:
+        print_message(f"-------------------------------", "text")
         print_message(f"Финализированный результат для hosts:", "success")
         buffer = {}
         for hostname in GLOBAL_HOSTS.keys():
@@ -248,6 +342,7 @@ def run_recon(target: str, domains: str = None):
             else:
                 buffer[hostname] = GLOBAL_HOSTS[hostname]
         if buffer:
+            print_message(f"-------------------------------", "text")
             print_message("Оставшиеся не распределенные хосты:", "alert")
             for hostname in buffer.keys():
                 print_message(f"{hostname} {" ".join(buffer[hostname])}", "text")
@@ -258,6 +353,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Тулза для допроса DNS-серверов в подсети", usage=usage)
     parser.add_argument('target', type=str, help='подсетка')
     parser.add_argument('--domains', type=str, help='список доменов (при наличии)')
+    parser.add_argument('-b', '--brute', action='store_true', help='Только брут подсетей')
     args = parser.parse_args()
 
-    run_recon(args.target, args.domains)
+    run_recon(args.target, args.domains, args.brute)
