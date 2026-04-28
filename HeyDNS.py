@@ -397,4 +397,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_recon(target=args.target, domains=args.domains,
-              flags={"brute": args.brute, "servers": args.server, "skip": args.skip, "outfile": args.outfile})
+              flags={"brute": args.brute, "servers": args.servers, "skip": args.skip, "outfile": args.outfile})
