@@ -330,10 +330,14 @@ def save_result(filename: str):
     """
     try:
         with open(filename, "w") as file:
-            file.writelines(GLOBAL_HOSTS)
+            for hostname in GLOBAL_HOSTS.keys():
+                if len(GLOBAL_HOSTS[hostname]) == 1:
+                    file.write(f"{GLOBAL_HOSTS[hostname][0]}    {hostname}\n")
+                else:
+                    continue
             file.close()
     except Exception as err:
-        print_message(f"Ошибка сохранения результата! Файл не бы создан.", "fail")
+        print_message(f"Ошибка сохранения результата! Файл не бы создан. Ошибка: {err}", "fail")
         exit(1)
 
 
@@ -350,6 +354,7 @@ def run_recon(target: str, flags: dict, domains: str = None):
         exit(1)
 
     banner(only_brute)
+    dns_servers = []
     if not skip_search:
         print_message("Ищем живые хосты", "alert", ender="\n\n")
         iplist = check_alive_hosts(target)
@@ -358,10 +363,9 @@ def run_recon(target: str, flags: dict, domains: str = None):
         dns_servers = find_dns_servers(iplist)
     else:
         print_message("Пропускаем поиск", "info", ender="\n\n")
-        dns_servers = []
     if input_servers:
         for server in input_servers:
-            if server not in input_servers:
+            if server not in dns_servers:
                 dns_servers.append(server)
     print_message(f" ", "text")
     print_message("Начинаем работать с каждым сервером", "alert")
