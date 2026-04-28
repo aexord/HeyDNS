@@ -360,7 +360,9 @@ def run_recon(target: str, flags: dict, domains: str = None):
         print_message("Пропускаем поиск", "info", ender="\n\n")
         dns_servers = []
     if input_servers:
-        dns_servers.append(server for server in input_servers)
+        for server in input_servers:
+            if server not in input_servers:
+                dns_servers.append(server)
     print_message(f" ", "text")
     print_message("Начинаем работать с каждым сервером", "alert")
     interrogation_dns_servers(target, dns_servers, domains, only_brute)
