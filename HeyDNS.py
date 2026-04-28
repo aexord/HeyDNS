@@ -197,6 +197,9 @@ def req_dc_dns_server(dns_server: str, subnet: str) -> (dict, list):
 
         pattern = r'(\d+)\.(\d+)\.(\d+)\.(\d+)\.in-addr\.arpa\s+name\s+=\s+([^\s]+)\.?$'
         match = re.match(pattern, checker.stdout.strip())
+        if not hasattr(match, 'group'):
+            print_message(f"Так, проблема с парсингом: {match}", "fail")
+            return {}
         dc_name = match.group(5).rstrip('.')
         domain = dc_name.split('.', maxsplit=1)
         domain = f"{domain[1]}"
@@ -212,6 +215,9 @@ def req_dc_dns_server(dns_server: str, subnet: str) -> (dict, list):
                 continue
             else:
                 match = re.match(pattern, checker.stdout.strip())
+                if not hasattr(match, 'group'):
+                    print_message(f"Так, проблема с парсингом: {match}", "fail")
+                    continue
                 hostname = match.group(5).rstrip('.')
                 if domain in hostname:
                     if hostname in hosts:
