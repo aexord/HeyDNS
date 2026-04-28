@@ -324,16 +324,43 @@ def interrogation_dns_servers(subnet: str, dns_servers: list, domains: str = Non
                     print_message(f"{hostname} {" ".join(buffer[hostname])}", "text")
 
 
-def run_recon(target: str, domains: str = None, only_brute: bool = False):
+def save_result(filename: str):
+    """
+    Сохранение финального результата перебора
+    """
+    try:
+        with open(filename, "w") as file:
+            file.writelines(GLOBAL_HOSTS)
+            file.close()
+    except Exception as err:
+        print_message(f"Ошибка сохранения результата! Файл не бы создан.", "fail")
+        exit(1)
+
+
+def run_recon(target: str, flags: dict, domains: str = None):
     """
     Основная функция запуска разведки и финального вывода по её результатам
     """
+    only_brute = flags["brute"]
+    input_servers = flags["servers"].split(',') if flags["servers"] else None
+    outfile = flags["outfile"]
+    skip_search = flags["skip"]
+    if skip_search and not input_servers:
+        print_message(f"Если не ищем DNS-сервера их нужно указать!", "fail")
+        exit(1)
+
     banner(only_brute)
-    print_message("Ищем живые хосты", "alert", ender="\n\n")
-    iplist = check_alive_hosts(target)
-    print_message(f" ", "text")
-    print_message("Ищем DNS-сервера", "alert", ender="\n\n")
-    dns_servers = find_dns_servers(iplist)
+    if not skip_search:
+        print_message("Ищем живые хосты", "alert", ender="\n\n")
+        iplist = check_alive_hosts(target)
+        print_message(f" ", "text")
+        print_message("Ищем DNS-сервера", "alert", ender="\n\n")
+        dns_servers = find_dns_servers(iplist)
+    else:
+        print_message("Пропускаем поиск", "info", ender="\n\n")
+        dns_servers = []
+    if input_servers:
+        dns_servers.append(server for server in input_servers)
     print_message(f" ", "text")
     print_message("Начинаем работать с каждым сервером", "alert")
     interrogation_dns_servers(target, dns_servers, domains, only_brute)
@@ -352,6 +379,10 @@ def run_recon(target: str, domains: str = None, only_brute: bool = False):
             print_message("Оставшиеся не распределенные хосты:", "alert")
             for hostname in buffer.keys():
                 print_message(f"{hostname} {" ".join(buffer[hostname])}", "text")
+    if outfile:
+        print_message(f"-------------------------------", "text")
+        save_result(outfile)
+        print_message(f"Сохранили результат {outfile}", "success")
 
 
 if __name__ == "__main__":
@@ -360,6 +391,10 @@ if __name__ == "__main__":
     parser.add_argument('target', type=str, help='подсетка')
     parser.add_argument('--domains', type=str, help='список доменов (при наличии)')
     parser.add_argument('-b', '--brute', action='store_true', help='Только брут подсетей')
+    parser.add_argument('--skip', action='store_true', help='пропустить поиск DNS-серверов')
+    parser.add_argument('-s', '--servers', type=str, help='список DNS-серверов, eg. 10.0.0.1,10.0.0.2')
+    parser.add_argument('-o', '--outfile', type=str, help='сохранить финальный результат в указанный файл')
     args = parser.parse_args()
 
-    run_recon(args.target, args.domains, args.brute)
+    run_recon(target=args.target, domains=args.domains,
+              flags={"brute": args.brute, "servers": args.server, "skip": args.skip, "outfile": args.outfile})
