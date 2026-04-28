@@ -16,14 +16,15 @@ class Colors:
     RESET = '\033[00m'
 
 
-def banner(only_brute: bool = False):
+def banner(only_brute: bool = False, skip_search: bool = False):
     banner_info = f"""
     {Colors.YELLOW}╔═══════════════════════════════════════╗
     {Colors.YELLOW}║                                       ║
     {Colors.YELLOW}║{Colors.BLUE}  HeyDNS by @Aexord, @Machine_Prophet  {Colors.YELLOW}║
-    {Colors.YELLOW}║                             ver. 1.1  ║
+    {Colors.YELLOW}║                             ver. 1.2  ║
     {Colors.YELLOW}╚═══════════════════════════════════════╝{Colors.RESET}
     {Colors.YELLOW} Режим работы: {Colors.RESET}
+    {Colors.YELLOW} Поиск серверов DNS - {Colors.BLUE} {"Off" if skip_search else "On"} {Colors.RESET}
     {Colors.YELLOW} DNS-сервер - {Colors.BLUE} {"Перенос зоны + брут по подсети" if not only_brute else "Только брут по подсети"} {Colors.RESET}
     {Colors.YELLOW} DC DNS-сервер - {Colors.BLUE} Только брут по подсети {Colors.RESET}
     """
@@ -353,7 +354,7 @@ def run_recon(target: str, flags: dict, domains: str = None):
         print_message(f"Если не ищем DNS-сервера их нужно указать!", "fail")
         exit(1)
 
-    banner(only_brute)
+    banner(only_brute, skip_search)
     dns_servers = []
     if not skip_search:
         print_message("Ищем живые хосты", "alert", ender="\n\n")
